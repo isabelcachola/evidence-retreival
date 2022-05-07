@@ -3,6 +3,7 @@ import logging
 from typing import Dict
 import numpy as np
 from pprint import pprint
+from pygments import highlight
 from tqdm import tqdm
 import argparse
 import time
@@ -16,7 +17,7 @@ from data import read_stopwords, read_rels, read_docs, format_query, process_doc
 from vectors import TermWeights
 from vectors import compute_tf, compute_boolean, compute_doc_freqs, compute_tfidf
 from vectors import cosine_sim, dice_sim, jaccard_sim, overlap_sim
-from eval import precision_at, mean_precision1, mean_precision2, norm_precision, norm_recall
+from eval import precision_at, mean_precision1, mean_precision2, norm_precision, norm_recall, match_highlighting
 
 
 def experiment(args):
@@ -24,6 +25,8 @@ def experiment(args):
     queries = read_docs(args.queries_path)
     rels = read_rels(args.rels_path)
     stopwords = read_stopwords('common_words')
+    tokenizer = AutoTokenizer.from_pretrained(args.qa_model)
+    model = AutoModelForQuestionAnswering.from_pretrained(args.qa_model).to(device)
 
     global N_docs
     N_docs = len(docs)
@@ -64,7 +67,8 @@ def experiment(args):
         ]
     ]
 
-    print('term', 'search', 'stem', 'removestop', 'sim', 'termweights', 'p_0.25', 'p_0.5', 'p_0.75', 'p_1.0', 'p_mean1', 'p_mean2', 'r_norm', 'p_norm', sep='\t')
+    print('term', 'search', 'stem', 'removestop', 'sim', 'termweights', 'p_0.25', 'p_0.5', 'p_0.75', 'p_1.0', 
+        'p_mean1', 'p_mean2', 'r_norm', 'p_norm', 'highlighted_p_mean1', sep='\t')
 
     # This loop goes through all permutations. You might want to test with specific permutations first
     for term, search, stem, removestop, sim, term_weights in itertools.product(*permutations):
@@ -76,9 +80,12 @@ def experiment(args):
         # Process queries
         for query in processed_queries:
             query_vec = term_funcs[term](query, doc_freqs, term_weights, N_docs)
-            results = search_funcs[search](doc_vectors, query_vec, sim_funcs[sim])
+            results = search_funcs[search](docs, query, doc_vectors, query_vec, sim_funcs[sim])
           
             rel = rels[query.doc_id]
+            highlighted_tokens = highlight_docs(query, results, docs, tokenizer, model)
+            true_highlighted = [(0,1)]*len(rel)
+            highlighted_results = match_highlighting(results, rel, highlighted_tokens, true_highlighted)
 
             metrics.append([
                 precision_at(0.25, results, rel),
@@ -88,7 +95,8 @@ def experiment(args):
                 mean_precision1(results, rel),
                 mean_precision2(results, rel),
                 norm_recall(results, rel),
-                norm_precision(results, rel)
+                norm_precision(results, rel),
+                mean_precision1(highlighted_results, rel)
             ])
 
         averages = [f'{np.mean([metric[i] for metric in metrics]):.4f}'
@@ -113,9 +121,10 @@ def get_query():
 
     return format_query(raw_query, keywords, authors)
 
+
 def highlight_text(query, body_text, tokenizer, model):
     question, text = ' '.join(query.body_text), ' '.join(body_text)
-    inputs = tokenizer(question, text, return_tensors="pt")
+    inputs = tokenizer(question, text, return_tensors="pt").to(device)
     with torch.no_grad():
         outputs = model(**inputs)
     answer_start_index = outputs.start_logits.argmax()
@@ -123,6 +132,15 @@ def highlight_text(query, body_text, tokenizer, model):
     predict_answer_tokens = inputs.input_ids[0, answer_start_index - 5 : answer_end_index + 5 + 1 ]
     answer = tokenizer.decode(predict_answer_tokens)
     return (answer_start_index, answer_end_index), answer
+
+def highlight_docs(query, retreived, docs, tokenizer, model):
+    highlights = []
+    for ret_id in retreived:
+        doc = docs[ret_id-1]
+        assert doc.doc_id == ret_id
+        answer_idxs, _ = highlight_text(query, doc.body_text, tokenizer, model)
+        highlights.append(answer_idxs)
+    return highlights
 
 def answer_single_query(tokenizer, model, search_func,
                         query, docs, doc_freqs, doc_vectors, 
@@ -150,7 +168,7 @@ def interactive(args):
     doc_freqs = compute_doc_freqs(processed_docs)
     doc_vectors = [term_func(doc, doc_freqs, term_weights) for doc in processed_docs]
     tokenizer = AutoTokenizer.from_pretrained(args.qa_model)
-    model = AutoModelForQuestionAnswering.from_pretrained(args.qa_model)
+    model = AutoModelForQuestionAnswering.from_pretrained(args.qa_model).to(device)
 
     query = get_query()
     while query:
@@ -179,7 +197,7 @@ def command_line_query(args):
     query = format_query(args.query, args.keywords, args.authors)
     query = process_docs(query, stem, removestop, stopwords)[0]
     tokenizer = AutoTokenizer.from_pretrained(args.qa_model)
-    model = AutoModelForQuestionAnswering.from_pretrained(args.qa_model)
+    model = AutoModelForQuestionAnswering.from_pretrained(args.qa_model).to(device)
     answer_single_query(tokenizer, model, search_bm25, query, 
                         docs, doc_freqs, doc_vectors, 
                         sim_func, term_func, term_weights)
@@ -220,6 +238,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     print(args)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     start = time.time()
     if args.interactive:
         interactive(args)
