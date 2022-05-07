@@ -49,6 +49,20 @@ def read_rels(file):
             rels[qid].append(rel)
     return rels
 
+def read_highlights(file):
+    rels = {}
+    with open(file) as f:
+        for line in f:
+            qid, rel, sidx, eidx = line.strip().split()
+            qid, rel, sidx, eidx = int(qid), int(rel), int(sidx), int(eidx)
+            if qid not in rels:
+                rels[qid] = {}
+                rels[qid]['rels'] = []
+                rels[qid]['highlights'] = []
+            rels[qid]['rels'].append(rel)
+            rels[qid]['highlights'].append((sidx, eidx))
+    return rels
+
 def read_docs(path, MAX_I=-1):
     '''
     Reads the corpus into a list of Documents

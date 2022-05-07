@@ -3,6 +3,11 @@ import numpy as np
 
 ### Precision/Recall
 
+def safe_div(num, den):
+    if den == 0:
+        return 0
+    return num / den
+
 def interpolate(x1, y1, x2, y2, x):
     m = (y2 - y1) / (x2 - x1)
     b = y1 - m * x1
@@ -41,7 +46,6 @@ def precision_at(recall: float, results: List[int], relevant: List[int]) -> floa
     for doc_id in results:
         is_relevant[doc_id] =  1 if doc_id in relevant else 0
     levels = [i/num_relevant for i in range(0, num_relevant+1)] 
-
 
     if recall in levels:
         num_docs_needed = levels.index(recall)
@@ -104,6 +108,14 @@ def match_highlighting(results, relevant,
                 retreived.append(retrieved_doc)
     return retreived
 
+def eval_highlighting(highlighted_results, relevant):
+    highlighted_results = set(highlighted_results)
+    relevant = set(relevant)
+    tp = len(highlighted_results.intersection(relevant))
+    prec = safe_div(tp, len(highlighted_results))
+    recall = safe_div(tp, len(relevant))
+    f1 = 2* safe_div((prec*recall), (prec+recall))
+    return prec, recall, f1
 
 def test_precision():
     recall_ = 0.6
