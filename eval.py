@@ -96,16 +96,23 @@ def norm_precision(results, relevant):
     return 1 - ( (num1-num2)/den )
 
 def match_highlighting(results, relevant, 
-                        highlighted_tokens, true_highlighted):
+                        highlighted_tokens, true_highlighted,
+                        strict=True):
     retreived = []
     for ret_idx, retrieved_doc in enumerate(results):
         if retrieved_doc in relevant:
-            # import ipdb;ipdb.set_trace()
             rel_idx = relevant.index(retrieved_doc)
             y_pred = highlighted_tokens[ret_idx]
             y_true = true_highlighted[rel_idx]
+            # Check if highlight is contained within the true answer
             if (y_pred[0] >= y_true[0]) and (y_pred[1] <= y_true[1]):
                 retreived.append(retrieved_doc)
+            # If not strict, check for any overlap
+            elif not strict:
+                if y_true[0] <= y_pred[0] <= y_true[1]:
+                    retreived.append(retrieved_doc)
+                elif y_true[0] <= y_pred[1] <= y_true[1]:
+                    retreived.append(retrieved_doc)
     return retreived
 
 def eval_highlighting(highlighted_results, relevant):
