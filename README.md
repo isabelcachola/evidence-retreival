@@ -2,14 +2,12 @@
  This repo is the final project for Information Retrieval and Web Agents 601.666.
 
 ## Requirements
----------------------
 
 This code has been tested on Python 3.9.12.
 
 To install required dependencies, run `pip install -r requirements.txt`.
 
 ## Data
----------------------
 To speed search, I include the documents preprocessed in `processed_docs`.
 The `processed_docs/test.v2/` directory contains preprocessed documents (removed stopwords and stemmed). 
 The `processed_docs/test.v2.freqs.pkl`contains precomputed document frequencies. 
@@ -40,7 +38,7 @@ Contains news data. formatted as follows:
 ```
 
 ## Usage
----------------------
+
 The `main.py` script includes 3 modes to run: command line, interactive, and experiment mode. Below are example usages. For full description of options, use `python main.py -h`.
 
 ### Command line mode
