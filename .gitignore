@@ -129,8 +129,6 @@ dmypy.json
 .pyre/
 
 # Data
-processed_docs
-tobacco_data
 COVID-QA.json
 
 # Profiler output
