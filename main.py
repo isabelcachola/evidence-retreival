@@ -13,6 +13,9 @@ import torch
 import pickle
 import pandas as pd
 
+import warnings
+warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning) 
+
 # local imports
 from data import read_highlights, read_stopwords, read_rels, read_docs, format_query, process_docs, process_docs_and_queries
 from vectors import TermWeights
@@ -37,7 +40,7 @@ def good_combos(permutations):
 def experiment(args):
     docs = read_docs(args.docs_path, MAX_I=args.max_docs)
     queries = read_docs(args.queries_path)
-    rels = read_highlights(args.rels_path)
+    rels = read_highlights(args.highlights_path)
     stopwords = read_stopwords('common_words')
     question_answerer = pipeline("question-answering", model=args.qa_model, device=device)
     
@@ -82,12 +85,14 @@ def experiment(args):
     ]
     good_permutations = good_combos(permutations)
 
-    print('term', 'search', 'stem', 'removestop', 'sim', 'termweights', 'p_0.25', 'p_0.5', 'p_0.75', 'p_1.0', 
+    outfile = open(args.results_file, 'w')
+    line = '\t'.join(['term', 'search', 'stem', 'removestop', 'sim', 'termweights', 'p_0.25', 'p_0.5', 'p_0.75', 'p_1.0', 
         'p_mean1', 'p_mean2', 'r_norm', 'p_norm', 'hprec_strict', 'hrecall_strict', 'hf1_strict',
-        'hprec_soft', 'hrecall_soft', 'hf1_soft', sep='\t')
+        'hprec_soft', 'hrecall_soft', 'hf1_soft'])
+    outfile.write(line + '\n')
 
     # This loop goes through all permutations. You might want to test with specific permutations first
-    for term, search, stem, removestop, sim, term_weights in good_permutations:
+    for term, search, stem, removestop, sim, term_weights in tqdm(good_permutations, ncols=0):
         processed_docs, processed_queries = process_docs_and_queries(docs, queries, stem, removestop, stopwords)
         if search == "search_basic":
             doc_freqs = compute_doc_freqs(processed_docs)
@@ -134,9 +139,10 @@ def experiment(args):
             for i in range(len(metrics[0]))]
 
 
-        print(term, search, stem, removestop, sim, ','.join(map(str, term_weights)), *averages, sep='\t')
+        line = '\t'.join([term, search, stem, removestop, sim, ','.join(map(str, term_weights)), *averages])
+        outfile.write(line + '\n')
 
-
+    outfile.close()
 
 def get_query():
     raw_query = ''
@@ -148,9 +154,9 @@ def get_query():
             print(f'Invalid input: {repr(raw_query)}')
         else:
             keywords = input('Keywords: ')
-            authors = input('Authors/API: ')
+            api = input('API: ')
 
-    return format_query(raw_query, keywords, authors)
+    return format_query(raw_query, keywords, api)
 
 
 def highlight_text(query, body_text, question_answerer):
@@ -208,7 +214,7 @@ def interactive(args):
 
     processed_docs = process_docs(docs, stem, removestop, stopwords)
     doc_freqs = compute_doc_freqs(processed_docs)
-    doc_vectors = [term_func(doc, doc_freqs, term_weights) for doc in processed_docs]
+    doc_vectors = [term_func(doc, doc_freqs, term_weights, N_docs) for doc in processed_docs]
     question_answerer = pipeline("question-answering", model=args.qa_model, device=device)
 
     query = get_query()
@@ -235,12 +241,12 @@ def command_line_query(args):
     doc_vectors = [term_func(doc, doc_freqs, term_weights, N_docs) for doc in docs]
 
 
-    query = format_query(args.query, args.keywords, args.authors)
+    query = format_query(args.query, args.keywords, args.api)
     query = process_docs(query, stem, removestop, stopwords)[0]
 
     question_answerer = pipeline("question-answering", model=args.qa_model, device=device)
     answer_single_query(question_answerer, search_bm25, query, 
-                        docs, doc_freqs, doc_vectors, 
+                        docs, doc_freqs, doc_vectors,
                         sim_func, term_func, term_weights)
 
 '''
@@ -263,24 +269,38 @@ def search_bm25(docs, query, doc_vectors, query_vec, sim, n=20):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--docs_path', '-dp', dest='docs_path', default='tobacco_data/tobacco_test.v2.raw')
-    parser.add_argument('--freqs_path', '-fp', dest='freqs_path', default='processed_docs/test.v2.freqs.pkl')
-    parser.add_argument('--max_docs', '-md', dest='max_docs', default=-1, type=int)
-    parser.add_argument('--qa_model', '-qa', dest='qa_model', default='huggingface-course/bert-finetuned-squad')
+    parser.add_argument('--docs_path', '-dp', dest='docs_path', 
+                        default='tobacco_data/tobacco_test.v2.raw',
+                        help='Path to documents. Accepts either a text file or directory of preprocessed docs. Default: tobacco_data/tobacco_test.v2.raw')
+    parser.add_argument('--freqs_path', '-fp', dest='freqs_path', 
+                        default='processed_docs/test.v2.freqs.pkl',
+                        help='Path to precomputed doc frequencies. Default: processed_docs/test.v2.freqs.pkl')
+    parser.add_argument('--max_docs', '-md', dest='max_docs', default=-1, type=int,
+                        help='Max documents to read in. Default: -1 (read all documents)')
+    parser.add_argument('--qa_model', '-qa', dest='qa_model', default='huggingface-course/bert-finetuned-squad',
+                        help='QA model to load. Default:huggingface-course/bert-finetuned-squad')
+    parser.add_argument('--device', '-d', dest='device', default=-1, type=int,
+                        help='GPU device id. Default: -1 (CPU)')
     # Experiment mode 
-    parser.add_argument('--queries_path', '-qp', dest='queries_path', default='tobacco_data/query.v2.raw')
-    parser.add_argument('--rels_path', '-rp', dest='rels_path', default='tobacco_data/query.v2.evidence')
+    parser.add_argument('--queries_path', '-qp', dest='queries_path', default='tobacco_data/query.v2.raw',
+                        help='Path to queries. Default: tobacco_data/query.v2.raw')
+    parser.add_argument('--highlights_path', '-hp', dest='highlights_path', default='tobacco_data/query.v2.evidence',
+                        help='Path to highlight annotations. Default: tobacco_data/query.v2.evidence')
+    parser.add_argument('--results_file', '-r', dest='results_file', default='results.tsv',
+                        help='Path to output results. Default: results.tsv')
     # Interactive mode
-    parser.add_argument('--interactive', '-i', dest='interactive', default=False, action='store_true')
+    parser.add_argument('--interactive', '-i', dest='interactive', default=False, action='store_true',
+                        help='Flag for interactive mode.')
     # Command line mode
-    parser.add_argument('--query', '-q', dest='query')
-    parser.add_argument('--keywords', '-kw', dest='keywords', default='')
-    parser.add_argument('--authors', '--api', '-a', dest='authors', default='')
+    parser.add_argument('--query', '-q', dest='query',
+                        help='Query input for command line mode.')
+    parser.add_argument('--keywords', '-kw', dest='keywords', default='', 
+                        help='Optional keyword parameter for command line mode')
+    parser.add_argument('--api', '-a', dest='api', default='', 
+                        help='Optional api parameter for command line mode')
 
     args = parser.parse_args()
-    print(args)
-    device = 0 if torch.cuda.is_available() else -1
-    print(device)
+    device = args.device if (torch.cuda.is_available() and args.device > -1) else -1
     start = time.time()
     if args.interactive:
         interactive(args)
