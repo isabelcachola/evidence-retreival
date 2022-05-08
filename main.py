@@ -39,7 +39,7 @@ def experiment(args):
     queries = read_docs(args.queries_path)
     rels = read_highlights(args.rels_path)
     stopwords = read_stopwords('common_words')
-    question_answerer = pipeline("question-answering", model=args.qa_model, device=0)
+    question_answerer = pipeline("question-answering", model=args.qa_model, device=device)
     
 
     global N_docs
@@ -83,7 +83,8 @@ def experiment(args):
     good_permutations = good_combos(permutations)
 
     print('term', 'search', 'stem', 'removestop', 'sim', 'termweights', 'p_0.25', 'p_0.5', 'p_0.75', 'p_1.0', 
-        'p_mean1', 'p_mean2', 'r_norm', 'p_norm', 'hprec', 'hrecall', 'hf1', sep='\t')
+        'p_mean1', 'p_mean2', 'r_norm', 'p_norm', 'hprec_strict', 'hrecall_strict', 'hf1_strict',
+        'hprec_soft', 'hrecall_soft', 'hf1_soft', sep='\t')
 
     # This loop goes through all permutations. You might want to test with specific permutations first
     for term, search, stem, removestop, sim, term_weights in good_permutations:
@@ -109,8 +110,10 @@ def experiment(args):
             rel = rels[query.doc_id]['rels']
             highlighted_tokens = highlight_docs(query, results, docs, question_answerer)
             true_highlighted = rels[query.doc_id]['highlights']
-            highlighted_results = match_highlighting(results, rel, highlighted_tokens, true_highlighted)
-            h_prec, h_recall, h_f1 = eval_highlighting(highlighted_results, rel)
+            strict_highlights = match_highlighting(results, rel, highlighted_tokens, true_highlighted, strict=True)
+            soft_highlights = match_highlighting(results, rel, highlighted_tokens, true_highlighted, strict=False)
+            h_prec_strict, h_recall_strict, h_f1_strict = eval_highlighting(strict_highlights, rel)
+            h_prec_soft, h_recall_soft, h_f1_soft = eval_highlighting(soft_highlights, rel)
             try:
                 metrics.append([
                     precision_at(0.25, results, rel),
@@ -121,9 +124,8 @@ def experiment(args):
                     mean_precision2(results, rel),
                     norm_recall(results, rel),
                     norm_precision(results, rel),
-                    h_prec, 
-                    h_recall, 
-                    h_f1
+                    h_prec_strict, h_recall_strict, h_f1_strict,
+                    h_prec_soft, h_recall_soft, h_f1_soft
                 ])
             except:
                 import ipdb;ipdb.set_trace()
@@ -152,12 +154,13 @@ def get_query():
 
 
 def highlight_text(query, body_text, question_answerer):
-    question, context = ' '.join(query.body_text), ' '.join(body_text)
-    answer = question_answerer(question=question, context=context)
+    question, joined_body_text = ' '.join(query.body_text), ' '.join(body_text)
+    answer = question_answerer(question=question, context=joined_body_text)
 
     token_idx = 0
+    answer_start_index, answer_end_index = -1, -1
     char_start_idx, char_end_idx = answer['start'], answer['end']
-    for char_idx, char in enumerate(context):
+    for char_idx, char in enumerate(joined_body_text):
         if char == ' ':
             token_idx += 1
         if char_idx == char_start_idx:
@@ -165,8 +168,11 @@ def highlight_text(query, body_text, question_answerer):
         if char_idx == char_end_idx:
             answer_end_index = token_idx
 
-    predict_answer_tokens = ' '.join(body_text[max(0,answer_start_index-10) : answer_end_index + 10 ])
-    
+    # predicted end character is last character
+    if answer_end_index == -1:
+        answer_end_index = token_idx
+
+    predict_answer_tokens = ' '.join(body_text[max(0,answer_start_index-10) : answer_end_index + 10 ])   
     return (answer_start_index, answer_end_index), predict_answer_tokens
 
 def highlight_docs(query, retreived, docs, question_answerer):
@@ -203,7 +209,7 @@ def interactive(args):
     processed_docs = process_docs(docs, stem, removestop, stopwords)
     doc_freqs = compute_doc_freqs(processed_docs)
     doc_vectors = [term_func(doc, doc_freqs, term_weights) for doc in processed_docs]
-    question_answerer = pipeline("question-answering", model=args.qa_model, device=0)
+    question_answerer = pipeline("question-answering", model=args.qa_model, device=device)
 
     query = get_query()
     while query:
@@ -232,7 +238,7 @@ def command_line_query(args):
     query = format_query(args.query, args.keywords, args.authors)
     query = process_docs(query, stem, removestop, stopwords)[0]
 
-    question_answerer = pipeline("question-answering", model=args.qa_model, device=0)
+    question_answerer = pipeline("question-answering", model=args.qa_model, device=device)
     answer_single_query(question_answerer, search_bm25, query, 
                         docs, doc_freqs, doc_vectors, 
                         sim_func, term_func, term_weights)
@@ -257,13 +263,13 @@ def search_bm25(docs, query, doc_vectors, query_vec, sim, n=20):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--docs_path', '-dp', dest='docs_path', default='tobacco_data/tobacco_test.raw')
-    parser.add_argument('--freqs_path', '-fp', dest='freqs_path', default='')
+    parser.add_argument('--docs_path', '-dp', dest='docs_path', default='tobacco_data/tobacco_test.v2.raw')
+    parser.add_argument('--freqs_path', '-fp', dest='freqs_path', default='processed_docs/test.v2.freqs.pkl')
     parser.add_argument('--max_docs', '-md', dest='max_docs', default=-1, type=int)
     parser.add_argument('--qa_model', '-qa', dest='qa_model', default='huggingface-course/bert-finetuned-squad')
     # Experiment mode 
-    parser.add_argument('--queries_path', '-qp', dest='queries_path', default='tobacco_data/query.raw')
-    parser.add_argument('--rels_path', '-rp', dest='rels_path', default='tobacco_data/query.evidence')
+    parser.add_argument('--queries_path', '-qp', dest='queries_path', default='tobacco_data/query.v2.raw')
+    parser.add_argument('--rels_path', '-rp', dest='rels_path', default='tobacco_data/query.v2.evidence')
     # Interactive mode
     parser.add_argument('--interactive', '-i', dest='interactive', default=False, action='store_true')
     # Command line mode
@@ -273,7 +279,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     print(args)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = 0 if torch.cuda.is_available() else -1
     print(device)
     start = time.time()
     if args.interactive:
