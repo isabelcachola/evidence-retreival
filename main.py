@@ -17,7 +17,7 @@ import warnings
 warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning) 
 
 # local imports
-from data import read_highlights, read_stopwords, read_rels, read_docs, format_query, process_docs, process_docs_and_queries
+from data import read_highlights, read_stopwords, read_docs, format_query, process_docs, process_docs_and_queries
 from vectors import TermWeights
 from vectors import compute_tf, compute_boolean, compute_doc_freqs, compute_tfidf
 from vectors import cosine_sim, dice_sim, jaccard_sim, overlap_sim
@@ -41,7 +41,7 @@ def experiment(args):
     docs = read_docs(args.docs_path, MAX_I=args.max_docs)
     queries = read_docs(args.queries_path)
     rels = read_highlights(args.highlights_path)
-    stopwords = read_stopwords('common_words')
+    # stopwords = read_stopwords(args.stopwords)
     question_answerer = pipeline("question-answering", model=args.qa_model, device=device)
     
 
@@ -139,7 +139,7 @@ def experiment(args):
             for i in range(len(metrics[0]))]
 
 
-        line = '\t'.join([term, search, stem, removestop, sim, ','.join(map(str, term_weights)), *averages])
+        line = '\t'.join([term, search, str(stem), str(removestop), sim, ','.join(map(str, term_weights)), *averages])
         outfile.write(line + '\n')
 
     outfile.close()
@@ -185,7 +185,8 @@ def highlight_docs(query, retreived, docs, question_answerer):
     highlights = []
     for ret_id in retreived:
         doc = docs[ret_id-1]
-        assert doc.doc_id == ret_id
+        if doc.doc_id != ret_id:
+            print(f"WARNING: doc.doc_id {doc.doc_id} != ret_id {ret_id}")
         answer_idxs, _ = highlight_text(query, doc.body_text, question_answerer)
         highlights.append(answer_idxs)
     return highlights
@@ -208,7 +209,7 @@ def interactive(args):
     global N_docs
     N_docs = len(docs)
     
-    stopwords = read_stopwords('common_words')
+    # stopwords = read_stopwords(args.stopwords)
     stem, removestop, sim_func, term_func = True, True, cosine_sim, compute_tfidf
     term_weights = TermWeights(author=3, title=3, keyword=4, body_text=1) 
 
@@ -231,7 +232,7 @@ def command_line_query(args):
     stem, removestop, sim_func, term_func = False, False, cosine_sim, compute_tfidf
     term_weights = TermWeights(author=3, title=3, keyword=4, body_text=1) 
     
-    stopwords = read_stopwords('common_words')
+    # stopwords = read_stopwords(args.stopwords)
     if not args.freqs_path:
         docs = process_docs(docs, stem, removestop, stopwords)
         doc_freqs = compute_doc_freqs(docs)
@@ -275,6 +276,7 @@ if __name__ == '__main__':
     parser.add_argument('--freqs_path', '-fp', dest='freqs_path', 
                         default='processed_docs/test.v2.freqs.pkl',
                         help='Path to precomputed doc frequencies. Default: processed_docs/test.v2.freqs.pkl')
+    parser.add_argument('--stopwords', dest='stopwords', default='common_words')
     parser.add_argument('--max_docs', '-md', dest='max_docs', default=-1, type=int,
                         help='Max documents to read in. Default: -1 (read all documents)')
     parser.add_argument('--qa_model', '-qa', dest='qa_model', default='huggingface-course/bert-finetuned-squad',
@@ -300,6 +302,7 @@ if __name__ == '__main__':
                         help='Optional api parameter for command line mode')
 
     args = parser.parse_args()
+    stopwords = read_stopwords(args.stopwords)
     device = args.device if (torch.cuda.is_available() and args.device > -1) else -1
     start = time.time()
     if args.interactive:

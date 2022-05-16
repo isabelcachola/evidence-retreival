@@ -114,7 +114,7 @@ def format_query(query, kw, auths):
 
     return [ Document(1, authors, [], keywords, body_text, body_text) ]
 
-stopwords = read_stopwords('common_words')
+# stopwords = read_stopwords('common_words')
 stemmer = PorterStemmer()
 
 def stem_doc(doc: Document):
@@ -125,20 +125,20 @@ def stem_doc(doc: Document):
 def stem_docs(docs: List[Document]):
     return [stem_doc(doc) for doc in tqdm(docs, desc='Stemming', disable=(len(docs)<500))]
 
-def remove_stopwords_doc(doc: Document):
+def remove_stopwords_doc(doc, stopwords):
     return Document(doc.doc_id, doc.author, doc.title, 
                     doc.keyword, doc.body_text, 
                     [word for word in doc.processed_body_text if word not in stopwords])
 
-def remove_stopwords(docs: List[Document]):
-    return [remove_stopwords_doc(doc) for doc in tqdm(docs, desc='Stopwords', disable=(len(docs)<500))]
+def remove_stopwords(docs, stopwords):
+    return [remove_stopwords_doc(doc, stopwords) for doc in tqdm(docs, desc='Stopwords', disable=(len(docs)<500))]
 
 def process_docs_and_queries(docs, queries, stem, removestop, stopwords):
     processed_docs = docs
     processed_queries = queries
     if removestop:
-        processed_docs = remove_stopwords(processed_docs)
-        processed_queries = remove_stopwords(processed_queries)
+        processed_docs = remove_stopwords(processed_docs, stopwords)
+        processed_queries = remove_stopwords(processed_queries, stopwords)
     if stem:
         processed_docs = stem_docs(processed_docs)
         processed_queries = stem_docs(processed_queries)
@@ -147,7 +147,7 @@ def process_docs_and_queries(docs, queries, stem, removestop, stopwords):
 def process_docs(docs, stem, removestop, stopwords):
     processed_docs = docs
     if removestop:
-        processed_docs = remove_stopwords(processed_docs)
+        processed_docs = remove_stopwords(processed_docs, stopwords)
     if stem:
         processed_docs = stem_docs(processed_docs)
     return processed_docs
