@@ -26,12 +26,12 @@ from eval import precision_at, mean_precision1, mean_precision2, norm_precision,
 
 def good_combos(permutations):
     good_permuatations = []
-    for term, search, stem, removestop, sim, term_weights in itertools.product(*permutations):
+    for term, search, qa_model, stem, removestop, sim, term_weights in itertools.product(*permutations):
         if search == "search_bm25":
             term, sim, term_weights  = 'na', 'na', 'na'
-            good_permuatations.append([term, search, stem, removestop, sim, term_weights])
+            good_permuatations.append([term, search, qa_model, stem, removestop, sim, term_weights])
         else:
-            good_permuatations.append([term, search, stem, removestop, sim, term_weights])
+            good_permuatations.append([term, search, qa_model, stem, removestop, sim, term_weights])
     df = pd.DataFrame(good_permuatations)
     df = df.drop_duplicates()
     return df.values.tolist()
@@ -42,105 +42,117 @@ def experiment(args):
     queries = read_docs(args.queries_path)
     rels = read_highlights(args.highlights_path)
     # stopwords = read_stopwords(args.stopwords)
-    question_answerer = pipeline("question-answering", model=args.qa_model, device=device)
     
 
     global N_docs
     N_docs = len(docs)
 
     term_funcs = {
-        'tf': compute_tf,
+        # 'tf': compute_tf,
         'tfidf': compute_tfidf, # DEFAULT
-        'boolean': compute_boolean
+        # 'boolean': compute_boolean
     }
 
     sim_funcs = {
         'cosine': cosine_sim, # DEFAULT
-        'dice': dice_sim,
-        'jaccard': jaccard_sim,
-        'overlap': overlap_sim
+        # 'dice': dice_sim,
+        # 'jaccard': jaccard_sim,
+        # 'overlap': overlap_sim
     }
     search_funcs = {
        "search_basic": search_basic,
        "search_bm25": search_bm25,
     }
+    qa_models = {
+       "bert-finetuned-squad": "huggingface-course/bert-finetuned-squad",
+       "roberta-large-squad2": "navteca/roberta-large-squad2",
+       "bigbird-roberta-natural-questions": "vasudevgupta/bigbird-roberta-natural-questions",
+       "bert-base-newsqa": "mirbostani/bert-base-uncased-finetuned-newsqa",
+       "longformer-base-squadv2": "mrm8488/longformer-base-4096-finetuned-squadv2"
+    }
 
     permutations = [
         term_funcs,
         search_funcs,
+        qa_models,
         [
-            False, 
+            # False, 
             True # DEFAULT
         ],  # stem
         [
             True, # DEFAULT
-            False, 
+            # False, 
         ],  # remove stopwords
         sim_funcs,
         [
-            TermWeights(author=1, title=1, keyword=1, body_text=1),
+            # TermWeights(author=1, title=1, keyword=1, body_text=1),
             TermWeights(author=3, title=3, keyword=4, body_text=1), # DEFAULT
-            TermWeights(author=1, title=1, keyword=1, body_text=4),
+            # TermWeights(author=1, title=1, keyword=1, body_text=4),
         ]
     ]
     good_permutations = good_combos(permutations)
 
     outfile = open(args.results_file, 'w')
-    line = '\t'.join(['term', 'search', 'stem', 'removestop', 'sim', 'termweights', 'p_0.25', 'p_0.5', 'p_0.75', 'p_1.0', 
-        'p_mean1', 'p_mean2', 'r_norm', 'p_norm', 'hprec_strict', 'hrecall_strict', 'hf1_strict',
-        'hprec_soft', 'hrecall_soft', 'hf1_soft'])
+    line = '\t'.join(['term', 'search', 'qa_model', 'stem', 'removestop', 'sim', 'termweights', 
+                    'p_0.25', 'p_0.5', 'p_0.75', 'p_1.0', 
+                    'p_mean1', 'p_mean2', 'r_norm', 'p_norm', 
+                    'p_1_strict', 'r_3_strict', 'mrr_strict', 
+                    'p_1_soft', 'r_3_soft', 'mrr_soft'])
     outfile.write(line + '\n')
 
     # This loop goes through all permutations. You might want to test with specific permutations first
-    for term, search, stem, removestop, sim, term_weights in tqdm(good_permutations, ncols=0):
-        processed_docs, processed_queries = process_docs_and_queries(docs, queries, stem, removestop, stopwords)
-        if search == "search_basic":
-            doc_freqs = compute_doc_freqs(processed_docs)
-            doc_vectors = [term_funcs[term](doc, doc_freqs, term_weights, N_docs) for doc in processed_docs]
-        else:
-            doc_freqs, doc_vectors = None, None
-        metrics = []
-
-        # Process queries
-        for query in processed_queries:
+    for term, search, qam, stem, removestop, sim, term_weights in tqdm(good_permutations, ncols=0):
+        try:
+            question_answerer = pipeline("question-answering", model=qa_models[qam], device=device)
+            processed_docs, processed_queries = process_docs_and_queries(docs, queries, stem, removestop, stopwords)
             if search == "search_basic":
-                query_vec = term_funcs[term](query, doc_freqs, term_weights, N_docs)
+                doc_freqs = compute_doc_freqs(processed_docs)
+                doc_vectors = [term_funcs[term](doc, doc_freqs, term_weights, N_docs) for doc in processed_docs]
             else:
-                query_vec = None
-            results = search_funcs[search](docs, query, doc_vectors, 
-                                            query_vec, 
-                                            sim_funcs[sim] if sim != 'na' else None,
-                                            n=N_docs)
-          
-            rel = rels[query.doc_id]['rels']
-            highlighted_tokens = highlight_docs(query, results, docs, question_answerer)
-            true_highlighted = rels[query.doc_id]['highlights']
-            strict_highlights = match_highlighting(results, rel, highlighted_tokens, true_highlighted, strict=True)
-            soft_highlights = match_highlighting(results, rel, highlighted_tokens, true_highlighted, strict=False)
-            h_prec_strict, h_recall_strict, h_f1_strict = eval_highlighting(strict_highlights, rel)
-            h_prec_soft, h_recall_soft, h_f1_soft = eval_highlighting(soft_highlights, rel)
-            try:
+                doc_freqs, doc_vectors = None, None
+            metrics = []
+
+            # Process queries
+            for query in processed_queries:
+                if search == "search_basic":
+                    query_vec = term_funcs[term](query, doc_freqs, term_weights, N_docs)
+                else:
+                    query_vec = None
+                results = search_funcs[search](docs, query, doc_vectors, 
+                                                query_vec, 
+                                                sim_funcs[sim] if sim != 'na' else None,
+                                                n=N_docs)
+            
+                rel = rels[query.doc_id]['rels']
+                highlighted_tokens = highlight_docs(query, results, docs, question_answerer)
+                true_highlighted = rels[query.doc_id]['highlights']
+                strict_highlights = match_highlighting(results, rel, highlighted_tokens, true_highlighted, strict=True)
+                soft_highlights = match_highlighting(results, rel, highlighted_tokens, true_highlighted, strict=False)
+                precision_at_1_strict, recall_at_3_strict, rr_strict = eval_highlighting(results, strict_highlights)
+                precision_at_1_soft, recall_at_3_soft, rr_soft = eval_highlighting(results, soft_highlights)
                 metrics.append([
-                    precision_at(0.25, results, rel),
-                    precision_at(0.5, results, rel),
-                    precision_at(0.75, results, rel),
-                    precision_at(1.0, results, rel),
-                    mean_precision1(results, rel),
-                    mean_precision2(results, rel),
-                    norm_recall(results, rel),
-                    norm_precision(results, rel),
-                    h_prec_strict, h_recall_strict, h_f1_strict,
-                    h_prec_soft, h_recall_soft, h_f1_soft
-                ])
-            except:
-                import ipdb;ipdb.set_trace()
-                print()
-        averages = [f'{np.mean([metric[i] for metric in metrics]):.4f}'
-            for i in range(len(metrics[0]))]
+                        precision_at(0.25, results, rel),
+                        precision_at(0.5, results, rel),
+                        precision_at(0.75, results, rel),
+                        precision_at(1.0, results, rel),
+                        mean_precision1(results, rel),
+                        mean_precision2(results, rel),
+                        norm_recall(results, rel),
+                        norm_precision(results, rel),
+                        precision_at_1_strict, recall_at_3_strict, rr_strict,
+                        precision_at_1_soft, recall_at_3_soft, rr_soft
+                    ])
+            
+            averages = [f'{np.mean([metric[i] for metric in metrics]):.4f}'
+                for i in range(len(metrics[0]))]
 
 
-        line = '\t'.join([term, search, str(stem), str(removestop), sim, ','.join(map(str, term_weights)), *averages])
-        outfile.write(line + '\n')
+            line = '\t'.join([term, search, qam, str(stem), str(removestop), sim, ','.join(map(str, term_weights)), *averages])
+            outfile.write(line + '\n')
+
+        except Exception as e:
+            line = '\t'.join([term, search, qam, str(stem), str(removestop), sim, ','.join(map(str, term_weights))])
+            print(f'{e} {line}')
 
     outfile.close()
 
@@ -185,8 +197,8 @@ def highlight_docs(query, retreived, docs, question_answerer):
     highlights = []
     for ret_id in retreived:
         doc = docs[ret_id-1]
-        if doc.doc_id != ret_id:
-            print(f"WARNING: doc.doc_id {doc.doc_id} != ret_id {ret_id}")
+        # if doc.doc_id != ret_id:
+        #     print(f"WARNING: doc.doc_id {doc.doc_id} != ret_id {ret_id}")
         answer_idxs, _ = highlight_text(query, doc.body_text, question_answerer)
         highlights.append(answer_idxs)
     return highlights

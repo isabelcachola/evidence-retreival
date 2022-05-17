@@ -115,14 +115,30 @@ def match_highlighting(results, relevant,
                     retreived.append(retrieved_doc)
     return retreived
 
-def eval_highlighting(highlighted_results, relevant):
-    highlighted_results = set(highlighted_results)
-    relevant = set(relevant)
-    tp = len(highlighted_results.intersection(relevant))
-    prec = safe_div(tp, len(highlighted_results))
-    recall = safe_div(tp, len(relevant))
-    f1 = 2* safe_div((prec*recall), (prec+recall))
-    return prec, recall, f1
+# Prec @ 1, Recall @ 3, RR
+def eval_highlighting(results, highlighted_results):
+
+    if results[0] in highlighted_results:
+        precision_at_1 = 1.
+    else: 
+        precision_at_1 = 0.
+    if len(set(results[:3]).intersection(highlighted_results)) > 0:
+        recall_at_3 = 1.
+    else:
+        recall_at_3 = 0.
+    min_rank = len(results)
+    for hr in highlighted_results:
+        rank = results.index(hr) + 1
+        if rank < min_rank:
+            min_rank = rank
+    rr = 1/min_rank
+    return precision_at_1, recall_at_3, rr
+    # relevant = set(relevant)
+    # tp = len(highlighted_results.intersection(relevant))
+    # prec = safe_div(tp, len(highlighted_results))
+    # recall = safe_div(tp, len(relevant))
+    # f1 = 2* safe_div((prec*recall), (prec+recall))
+    # return prec, recall, f1
 
 def test_precision():
     recall_ = 0.6
