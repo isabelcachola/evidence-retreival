@@ -1,9 +1,0 @@
-term	search	qa_model	stem	removestop	sim	termweights	p_0.25	p_0.5	p_0.75	p_1.0	p_mean1	p_mean2	r_norm	p_norm	p_1_strict	r_3_strict	mrr_strict	p_1_soft	r_3_soft	mrr_soft
-tfidf	search_basic	bert-finetuned-squad	True	True	cosine	3,3,4,1	0.4393	0.3709	0.1986	0.1395	0.3363	0.3343	0.7207	0.5658	0.0000	0.1000	0.1016	0.0000	0.1000	0.1123
-tfidf	search_basic	roberta-large-squad2	True	True	cosine	3,3,4,1	0.4393	0.3709	0.1986	0.1395	0.3363	0.3343	0.7207	0.5658	0.0000	0.2000	0.0987	0.0000	0.2000	0.0987
-tfidf	search_basic	bert-base-newsqa	True	True	cosine	3,3,4,1	0.4393	0.3709	0.1986	0.1395	0.3363	0.3343	0.7207	0.5658	0.0000	0.2000	0.1049	0.0000	0.2000	0.1049
-tfidf	search_basic	longformer-base-squadv2	True	True	cosine	3,3,4,1	0.4393	0.3709	0.1986	0.1395	0.3363	0.3343	0.7207	0.5658	0.0000	0.1000	0.0763	0.0000	0.1000	0.0763
-na	search_bm25	bert-finetuned-squad	True	True	na	n,a	0.2637	0.1055	0.1040	0.0958	0.1577	0.1837	0.4652	0.3329	0.1000	0.1000	0.1403	0.1000	0.2000	0.1536
-na	search_bm25	roberta-large-squad2	True	True	na	n,a	0.2637	0.1055	0.1040	0.0958	0.1577	0.1837	0.4652	0.3329	0.0000	0.0000	0.0497	0.0000	0.0000	0.0497
-na	search_bm25	bert-base-newsqa	True	True	na	n,a	0.2637	0.1055	0.1040	0.0958	0.1577	0.1837	0.4652	0.3329	0.0000	0.0000	0.0438	0.0000	0.1000	0.0572
-na	search_bm25	longformer-base-squadv2	True	True	na	n,a	0.2637	0.1055	0.1040	0.0958	0.1577	0.1837	0.4652	0.3329	0.0000	0.0000	0.0201	0.0000	0.0000	0.0201
