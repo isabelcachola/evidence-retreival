@@ -133,3 +133,7 @@ COVID-QA.json
 
 # Profiler output
 *.lprof
+
+# Model weights and runs
+evidence/runs/*
+evidence/results/*
