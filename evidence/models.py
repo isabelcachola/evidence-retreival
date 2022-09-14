@@ -36,7 +36,10 @@ class SciFact:
         self.LABELS = ['CONTRADICT', 'NOT_ENOUGH_INFO', 'SUPPORT']
 
     def encode(self, sentences, claims):
-        text =  list(zip(sentences, claims))
+        if claims is not None:
+            text =  list(zip(sentences, claims))
+        else:
+            text = sentences
         encoded_dict = self.tokenizer.batch_encode_plus(
             text,
             pad_to_max_length=True,
@@ -62,13 +65,9 @@ class SciFact:
                     evidence = ' '.join([text.title, text.text])
                 else:
                     evidence = text.text
-                encoded_dict = self.encode([evidence], [query.text])
+                # encoded_dict = self.encode([evidence], [query.text])
+                encoded_dict = self.encode([evidence], None)
                 label_scores = torch.softmax(self.model(**encoded_dict)[0], dim=1)[0]
-                label_index = label_scores.argmax().item()
-                label_confidence = label_scores[label_index].item()
-                # results= {'label': self.LABELS[label_index], 
-                #         'confidence': round(label_confidence, 4),
-                #         'all_scores': label_scores.tolist()}
                 results = (label_scores[0] + label_scores[2]).item()
                 output.append(results)
         return output
@@ -77,38 +76,37 @@ class EvidenceFilter(Reranker):
     def __init__(self, base_model, device, batch_size, evidence_model_path):
         self.safe_ln = lambda x: 0 if x <= 0 else np.log(x)
         self.base_model = base_model
-        # self.evidence_model = AutoModelForSequenceClassification.from_pretrained(evidence_model_path, num_labels=2)
+        self.evidence_model = AutoModelForSequenceClassification.from_pretrained(evidence_model_path, num_labels=2)
         self.tokenizer = AutoTokenizer.from_pretrained(evidence_model_path)
 
-        # training_args = TrainingArguments(
-        #                     output_dir=evidence_model_path,
-        #                     learning_rate=2e-5,
-        #                     per_device_train_batch_size=batch_size,
-        #                     per_device_eval_batch_size=batch_size,
-        #                     num_train_epochs=1,
-        #                     weight_decay=0.01,
-        #                 )
-        # data_collator = DataCollatorWithPadding(tokenizer=self.tokenizer)
-        # self.evidence_filter = Trainer(
-        #     model=self.evidence_model,
-        #     args=training_args,
-        #     tokenizer=self.tokenizer,
-        #     data_collator=data_collator,
-        # )
-        # self.preprocess_function = lambda example: self.tokenizer(example.text, truncation=True)
-        self.evidence_filter = SciFact(evidence_model_path, device) 
-
-    # def preprocess(self, example):
-    #     return self.tokenizer(example.text, truncation=True)
+        training_args = TrainingArguments(
+                            output_dir=evidence_model_path,
+                            learning_rate=2e-5,
+                            per_device_train_batch_size=batch_size,
+                            per_device_eval_batch_size=batch_size,
+                            num_train_epochs=1,
+                            weight_decay=0.01,
+                        )
+        data_collator = DataCollatorWithPadding(tokenizer=self.tokenizer)
+        self.evidence_filter = Trainer(
+            model=self.evidence_model,
+            args=training_args,
+            tokenizer=self.tokenizer,
+            data_collator=data_collator,
+        )
+        self.preprocess = lambda example: self.tokenizer(example.text, truncation=True)
+        # self.evidence_filter = SciFact(evidence_model_path, device) 
 
     def rescore(self, query: Query, texts: List[Text]) -> List[Text]:
         texts = deepcopy(texts)
-        # proc_texts = [self.preprocess(ex) for ex in texts]
-        evidence_preds = self.evidence_filter.predict(query, texts)
+        proc_texts = [self.preprocess(ex) for ex in texts]
+        # evidence_preds = self.evidence_filter.predict(query, texts)
+        # import ipdb;ipdb.set_trace()
+        evidence_preds = self.evidence_filter.predict(proc_texts)
         texts = self.base_model.rescore(query, texts)
         for i, text in tqdm(enumerate(texts)):
-            # text.score += evidence_preds[0][i, 1] 
-            text.score += evidence_preds[i]
+            text.score += evidence_preds[0][i, 1] 
+            # text.score += evidence_preds[i]
 
         return texts
 
