@@ -137,3 +137,4 @@ COVID-QA.json
 # Model weights and runs
 evidence/runs/*
 evidence/results/*
+evidence/data/*
